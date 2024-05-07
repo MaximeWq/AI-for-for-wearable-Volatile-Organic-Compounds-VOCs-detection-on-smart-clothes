@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var selectionView: SelectionView
     private var numRows = 1
     private var numColumns = 1
+    private var captureCount = 0
     private var triangleArea: Rect? = null
     private val paint = Paint().apply {
         color = Color.RED
@@ -222,39 +223,41 @@ class MainActivity : AppCompatActivity() {
 
     private fun cropImage(image: Bitmap?): Bitmap? {
         return image?.let { bitmap ->
-            val cropTop = 276 // Nombre de pixels à couper du haut de l'image
-            val cropBottom = 276 // Nombre de pixels à couper du bas de l'image
-            val cropLeft = 9 // Nombre de pixels à couper de la gauche de l'image
-            val cropRight = 9 // Nombre de pixels à couper de la droite de l'image
+            val cropTop = bitmap.height / 4 // Coupe le quart supérieur de l'image
+            val cropBottom = bitmap.height * 3 / 4 // Coupe le quart inférieur de l'image
+            val cropLeft = bitmap.width / 4 // Coupe le quart gauche de l'image
+            val cropRight = bitmap.width * 3 / 4 // Coupe le quart droit de l'image
 
-            return Bitmap.createBitmap(
+            val croppedBitmap = Bitmap.createBitmap(
                 bitmap,
                 cropLeft, // Commence à cropper depuis le bord gauche
                 cropTop, // Commence à cropper depuis le haut de l'image
-                bitmap.width - cropLeft - cropRight, // Largeur de l'image à conserver après avoir coupé à gauche et à droite
-                bitmap.height - cropTop - cropBottom // Hauteur de l'image à conserver après avoir coupé en haut et en bas
+                bitmap.width / 2, // Largeur de l'image à conserver (moitié de la largeur originale)
+                bitmap.height / 2 // Hauteur de l'image à conserver (moitié de la hauteur originale)
             )
+            return croppedBitmap
         }
     }
 
 
 
-private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int) {
-    var output: FileOutputStream? = null
-    try {
-        val file = File(externalMediaDirs.first(), "grid_image_${imageIndex}_${row}_${col}.jpg")
-        output = FileOutputStream(file)
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
-    } catch (e: IOException) {
-        e.printStackTrace()
-    } finally {
+
+    private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int) {
+        var output: FileOutputStream? = null
         try {
-            output?.close()
+            val file = File(externalMediaDirs.first(), "grid_image_${imageIndex}_${row}_${col}.jpg")
+            output = FileOutputStream(file)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
         } catch (e: IOException) {
             e.printStackTrace()
+        } finally {
+            try {
+                output?.close()
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
         }
     }
-}
 
     private fun saveImage(bitmap: Bitmap?) {
         bitmap?.let { image ->
@@ -305,8 +308,23 @@ private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int) {
     }
 
 
-/*
+    /*
 
+        private fun calculateAveragePixelValue(bitmap: Bitmap): Double {
+            var totalPixelValue = 0
+            for (x in 0 until bitmap.width) {
+                for (y in 0 until bitmap.height) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val red = Color.red(pixel)
+                    val green = Color.green(pixel)
+                    val blue = Color.blue(pixel)
+                    totalPixelValue += (red + green + blue) / 3
+                }
+            }
+            val totalPixels = bitmap.width * bitmap.height
+            return totalPixelValue.toDouble() / totalPixels
+        }
+    */
     private fun calculateAveragePixelValue(bitmap: Bitmap): Double {
         var totalPixelValue = 0
         for (x in 0 until bitmap.width) {
@@ -321,25 +339,7 @@ private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int) {
         val totalPixels = bitmap.width * bitmap.height
         return totalPixelValue.toDouble() / totalPixels
     }
-*/
-private fun calculateAveragePixelValue(bitmap: Bitmap): Double {
-    var totalPixelValue = 0
-    val halfWidth = bitmap.width / 2
-    val halfHeight = bitmap.height / 2
 
-    for (x in halfWidth until bitmap.width - halfWidth) {
-        for (y in halfHeight until bitmap.height - halfHeight) {
-            val pixel = bitmap.getPixel(x, y)
-            val red = Color.red(pixel)
-            val green = Color.green(pixel)
-            val blue = Color.blue(pixel)
-            totalPixelValue += (red + green + blue) / 3
-        }
-    }
-
-    val totalPixels = (bitmap.width - 2 * halfWidth) * (bitmap.height - 2 * halfHeight)
-    return totalPixelValue.toDouble() / totalPixels
-}
 
 
     private fun saveAverageValuesToCSV(averageValues: List<Double>, filePath: String) {
