@@ -16,4 +16,16 @@
         android:layout_height="wrap_content"
         android:hint="Number of Columns" />
 
+    <EditText
+        android:id="@+id/nbCaptureToTakeInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Number of Captures to Take" />
+
+    <EditText
+        android:id="@+id/captureDelayInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Capture Delay (in milliseconds)" />
+
 </LinearLayout>

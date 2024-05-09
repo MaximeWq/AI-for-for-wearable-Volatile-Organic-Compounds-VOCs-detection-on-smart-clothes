@@ -15,6 +15,9 @@ import android.graphics.Rect
 import android.hardware.camera2.CameraManager
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
@@ -41,7 +44,8 @@ import java.io.IOException
 import kotlin.math.max
 import kotlin.math.min
 import java.io.FileWriter
-
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 
 class MainActivity : AppCompatActivity() {
@@ -54,14 +58,10 @@ class MainActivity : AppCompatActivity() {
     private var numRows = 1
     private var numColumns = 1
     private var captureCount = 0
-    private var triangleArea: Rect? = null
-    private val paint = Paint().apply {
-        color = Color.RED
-        style = Paint.Style.STROKE
-        strokeWidth = 5f
-    }
 
 
+    private var nbCaptureToTake = 1
+    private var captureDelay = 100L
 
 
 
@@ -75,6 +75,9 @@ class MainActivity : AppCompatActivity() {
         captureButton = findViewById(R.id.captureButton)
         configButton = findViewById(R.id.configButton)
         selectionView = findViewById(R.id.selectionView)
+        //val setNbCaptureButton = findViewById<Button>(R.id.setNbCaptureButton)
+        //val setCaptureDelayButton = findViewById<Button>(R.id.setCaptureDelayButton)
+
         if (selectionView is SelectionView) {
             val selectionView = selectionView as SelectionView
         } else {
@@ -92,6 +95,8 @@ class MainActivity : AppCompatActivity() {
         configButton.setOnClickListener {
             showConfigDialog()
         }
+
+
 
 
 
@@ -114,12 +119,16 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("OK") { _, _ ->
                 val rowsStr = numRowsInput.text.toString()
                 val columnsStr = numColumnsInput.text.toString()
+                val nbCaptureStr = numRowsInput.text.toString()
+                val captureDelayStr = numColumnsInput.text.toString()
                 if (rowsStr.isNotEmpty() && columnsStr.isNotEmpty()) {
                     numRows = rowsStr.toInt()
                     numColumns = columnsStr.toInt()
+                    nbCaptureToTake = nbCaptureStr.toInt()
+                    captureDelay = captureDelayStr.toLong()
                     Toast.makeText(
                         this,
-                        "Rows: $numRows, Columns: $numColumns",
+                        "Rows: $numRows, Columns: $numColumns, nbCaptureToTake: $nbCaptureToTake, captureDelay: $captureDelay",
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
@@ -196,7 +205,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun captureImage() {
-        val file = File(externalMediaDirs.first(), "image.jpg")
+        val currentTime = System.currentTimeMillis()
+        val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
+        val folder = File(externalMediaDirs.first(), folderName)
+        if (!folder.exists()) {
+            folder.mkdirs()
+        }
+
+        val file = File(folder, "image_$captureCount.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
 
         imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
@@ -209,57 +225,47 @@ class MainActivity : AppCompatActivity() {
                     val savedImageFile = File(savedUri.path ?: "")
                     val savedImage = ImageUtils.decodeImageFile(savedImageFile)
                     val croppedImage = cropImage(savedImage)
-                    saveImage(croppedImage)
+                    saveImage(croppedImage, folder)
                     val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition3/"
-                    processSubImages(imagesDirectory)
+                    processSubImages(imagesDirectory, folderName)
 
+                    captureCount++
+
+                    if (captureCount < nbCaptureToTake) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            captureImage()
+                        }, captureDelay)
+                    }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
                 }
             })
-
     }
 
     private fun cropImage(image: Bitmap?): Bitmap? {
-        return image?.let { bitmap ->
-            val cropTop = bitmap.height / 4 // Coupe le quart supérieur de l'image
-            val cropBottom = bitmap.height * 3 / 4 // Coupe le quart inférieur de l'image
-            val cropLeft = bitmap.width / 4 // Coupe le quart gauche de l'image
-            val cropRight = bitmap.width * 3 / 4 // Coupe le quart droit de l'image
+        image?.let { bitmap ->
+            val cropTop = bitmap.height / 4
+            val cropBottom = bitmap.height * 3 / 4
+            val cropLeft = bitmap.width / 4
+            val cropRight = bitmap.width * 3 / 4
 
             val croppedBitmap = Bitmap.createBitmap(
                 bitmap,
-                cropLeft, // Commence à cropper depuis le bord gauche
-                cropTop, // Commence à cropper depuis le haut de l'image
-                bitmap.width / 2, // Largeur de l'image à conserver (moitié de la largeur originale)
-                bitmap.height / 2 // Hauteur de l'image à conserver (moitié de la hauteur originale)
+                cropLeft,
+                0,
+                bitmap.width / 2,
+                bitmap.height / 2
             )
             return croppedBitmap
+
         }
+        return null
     }
 
 
 
-
-    private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int) {
-        var output: FileOutputStream? = null
-        try {
-            val file = File(externalMediaDirs.first(), "grid_image_${imageIndex}_${row}_${col}.jpg")
-            output = FileOutputStream(file)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
-        } catch (e: IOException) {
-            e.printStackTrace()
-        } finally {
-            try {
-                output?.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
-        }
-    }
-
-    private fun saveImage(bitmap: Bitmap?) {
+    private fun saveImage(bitmap: Bitmap?, folder: File) {
         bitmap?.let { image ->
             val gridWidth = image.width / numColumns
             val gridHeight = image.height / numRows
@@ -274,57 +280,57 @@ class MainActivity : AppCompatActivity() {
                         val gridBitmap =
                             Bitmap.createBitmap(image, startX, startY, gridWidth, gridHeight)
 
-                        saveGridImage(gridBitmap, row, col, imageIndex++)
+                        saveGridImage(gridBitmap, row, col, imageIndex++, folder)
                     }
                 }
             }
         }
     }
 
+    private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int, folder: File) {
+        var output: FileOutputStream? = null
+        try {
+            val file = File(folder, "grid_image_${imageIndex}_${row}_${col}.jpg")
+            output = FileOutputStream(file)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
+        } catch (e: IOException) {
+            e.printStackTrace()
+        } finally {
+            try {
+                output?.close()
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+
 
 
     private fun cropAndSaveImage(image: Bitmap?) {
         image?.let { bitmap ->
-            val cropTop = 195 // Nombre de pixels à couper du haut de l'image
-            val cropBottom = 208 // Nombre de pixels à couper du bas de l'image
+            val cropTop = 195
+            val cropBottom = 208
 
             val croppedBitmap = Bitmap.createBitmap(
                 bitmap,
-                0, // Commence à cropper depuis le bord gauche
-                cropTop, // Commence à cropper depuis le haut de l'image
-                bitmap.width, // Largeur de l'image à conserver
-                bitmap.height - cropTop - cropBottom // Hauteur de l'image à conserver après avoir coupé en haut et en bas
+                0,
+                cropTop,
+                bitmap.width,
+                bitmap.height - cropTop - cropBottom
             )
 
-            // Enregistrez la bitmap croppée
             val croppedFile = File(externalMediaDirs.first(), "cropped_image.jpg")
             FileOutputStream(croppedFile).use { output ->
                 croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
             }
 
-            // Affichez un message ou effectuez d'autres actions avec l'image croppée si nécessaire
             Toast.makeText(baseContext, "Image cropped and saved successfully", Toast.LENGTH_SHORT).show()
         }
     }
 
 
-    /*
 
-        private fun calculateAveragePixelValue(bitmap: Bitmap): Double {
-            var totalPixelValue = 0
-            for (x in 0 until bitmap.width) {
-                for (y in 0 until bitmap.height) {
-                    val pixel = bitmap.getPixel(x, y)
-                    val red = Color.red(pixel)
-                    val green = Color.green(pixel)
-                    val blue = Color.blue(pixel)
-                    totalPixelValue += (red + green + blue) / 3
-                }
-            }
-            val totalPixels = bitmap.width * bitmap.height
-            return totalPixelValue.toDouble() / totalPixels
-        }
-    */
     private fun calculateAveragePixelValue(bitmap: Bitmap): Double {
         var totalPixelValue = 0
         for (x in 0 until bitmap.width) {
@@ -346,33 +352,41 @@ class MainActivity : AppCompatActivity() {
         try {
             val file = File(filePath)
             file.parentFile?.mkdirs()
-            val writer = FileWriter(file)
+            val writer = FileWriter(file, true)
             for ((index, value) in averageValues.withIndex()) {
                 writer.append("$value;")
             }
             writer.close()
+
         } catch (e: IOException) {
             e.printStackTrace()
         }
     }
 
 
-    private fun processSubImages(imagesDirectory: String) {
+    private fun processSubImages(imagesDirectory: String, folderName: String){
         val externalStorageDirectory = Environment.getExternalStorageDirectory()
-        val imagesDir = File(externalStorageDirectory, "Android/media/com.mawissocq.voc_acquisition3")
+        val imagesDir = File(externalStorageDirectory, "Android/media/com.mawissocq.voc_acquisition3/$folderName")
         val subImages = imagesDir.listFiles { file -> file.isFile && file.extension == "jpg" }
-        println(subImages)
+        println("subimages ${subImages}")
         if (subImages != null && subImages.isNotEmpty()) {
             val averageValues = mutableListOf<Double>()
             for (subImage in subImages.sortedBy { it.nameWithoutExtension }) {
+                println("subImage ${subImage}")
                 val bitmap = BitmapFactory.decodeFile(subImage.absolutePath)
                 val averagePixelValue = calculateAveragePixelValue(bitmap)
                 averageValues.add(averagePixelValue)
             }
 
-            saveAverageValuesToCSV(averageValues, "${imagesDir.absolutePath}/average_values.csv")
+            saveAverageValuesToCSV(averageValues, "${imagesDir.absolutePath}/../average_values.csv")
         }
     }
+
+
+
+
+
+
 
 
 }
