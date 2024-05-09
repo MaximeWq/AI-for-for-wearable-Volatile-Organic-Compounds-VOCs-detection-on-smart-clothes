@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <EditText
+        android:id="@+id/numRowsInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Number of Rows" />
+
+    <EditText
+        android:id="@+id/numColumnsInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Number of Columns" />
+
+    <EditText
+        android:id="@+id/nbCaptureToTakeInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Number of Captures to Take" />
+
+    <EditText
+        android:id="@+id/captureDelayInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Capture Delay (in milliseconds)" />
+
+</LinearLayout>
