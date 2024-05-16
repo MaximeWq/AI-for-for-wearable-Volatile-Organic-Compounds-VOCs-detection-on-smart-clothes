@@ -6,8 +6,10 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.util.AttributeSet
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
+import android.widget.TextView
 
 class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs) {
 
@@ -24,6 +26,17 @@ class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs
     private var triangleArea: Rect? = null
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val x = event.x.toString()
+        val y = event.y.toString()
+        //val coordinatesTextView = findViewById<TextView>(R.id.coordinatesTextView)
+        //coordinatesTextView.setText("Coordonnéesfeur1 : ${x} feur ${y}")
+        //findViewById<TextView>(R.id.coordinatesTextView)?.text = "Coordonnéesfeur2 : ${x} feur ${y}"
+        Log.d("Coordonnées", "Coordonnées : (${x}, ${y})")
+
+        //val coordinatesTextView = findViewById<TextView>(R.id.coordinatesTextView)
+        //coordinatesTextView.setText("Coordonnéesfeur1 :")
+
+
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 startX = event.x
@@ -43,11 +56,17 @@ class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs
                 val right = Math.max(startX, endX).toInt()
                 val bottom = Math.max(startY, endY).toInt()
                 triangleArea = Rect(left, top, right, bottom)
+                println("Coordinates of selection rectangle: ($left, $top) - ($right, $bottom)")
                 invalidate()
             }
         }
         return true
     }
+
+    fun isSelectionRectVisible(): Boolean {
+        return triangleArea != null
+    }
+
 
     fun getSelectionRect(): Rect? {
         return triangleArea
@@ -59,6 +78,10 @@ class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        triangleArea?.let {
+            val coordinates = "Coordonnéesfeur3 : (${it.left}, ${it.top}) - (${it.right}, ${it.bottom})"
+            findViewById<TextView>(R.id.coordinatesTextView)?.text = coordinates
+        }
         drawSelectionRect(canvas)
     }
 }
