@@ -2,4 +2,6 @@
 
 Runs on Android 6 and higher.
 
+## Goal
+
 ## Acquisition system
