@@ -514,9 +514,12 @@ private fun captureImage() {
             val file = File(filePath)
             file.parentFile?.mkdirs()
             val writer = FileWriter(file, true)
+            writer.append(SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(System.currentTimeMillis()))
+            writer.append(";")
             for ((index, value) in averageValues.withIndex()) {
                 writer.append("$value;")
             }
+            writer.append("\n")
             writer.close()
 
         } catch (e: IOException) {
@@ -528,18 +531,17 @@ private fun captureImage() {
     private fun processSubImages(imagesDirectory: String, folderName: String){
         val externalStorageDirectory = Environment.getExternalStorageDirectory()
         val imagesDir = File(externalStorageDirectory, "Android/media/com.mawissocq.voc_acquisition_sdk_23/$folderName")
-        val subImages = imagesDir.listFiles { file -> file.isFile && file.extension == "jpg" }
-        println("subimages ${subImages}")
+        val subImages = imagesDir.listFiles { file -> file.isFile && file.extension == "jpg" && file.name.startsWith("grid_image") }
         if (subImages != null && subImages.isNotEmpty()) {
             val averageValues = mutableListOf<Double>()
+            //averageValues.add(SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(System.currentTimeMillis()).toDouble())
             for (subImage in subImages.sortedBy { it.nameWithoutExtension }) {
-                println("subImage ${subImage}")
                 val bitmap = BitmapFactory.decodeFile(subImage.absolutePath)
-                val averagePixelValue = calculateAveragePixelValue(bitmap)  //CRASH
+                val averagePixelValue = calculateAveragePixelValue(bitmap)
                 averageValues.add(averagePixelValue)
             }
 
-            saveAverageValuesToCSV(averageValues, "${imagesDir.absolutePath}/../average_values.csv")
+            saveAverageValuesToCSV(averageValues, "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}.csv")
         }
     }
 
