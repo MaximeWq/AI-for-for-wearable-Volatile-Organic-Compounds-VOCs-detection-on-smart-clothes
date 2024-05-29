@@ -1,6 +1,5 @@
 package com.mawissocq.voc_acquisition_sdk_23
 
-
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -9,6 +8,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.hardware.camera2.CameraManager
@@ -23,26 +25,30 @@ import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.Preview
+import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import java.io.File
 import java.io.FileOutputStream
-import androidx.core.app.ActivityCompat
-import androidx.core.net.toUri
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import kotlin.math.max
-import kotlin.math.min
 import java.io.FileWriter
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.math.max
+import kotlin.math.min
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+
 
 class MainActivity : AppCompatActivity() {
     private val cameraPermissionRequestCode = 100
@@ -60,33 +66,31 @@ class MainActivity : AppCompatActivity() {
     private var captureDelay = 100L
     private lateinit var coordinatesTextView: TextView
 
+    val options = BarcodeScannerOptions.Builder()
+        .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+        .build()
+
+    // Initialisez le scanner de codes-barres
+    val scanner: BarcodeScanner = BarcodeScanning.getClient(options)
 
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
         setContentView(R.layout.activity_main)
+
         previewView = findViewById(R.id.previewView)
         captureButton = findViewById(R.id.captureButton)
         configButton = findViewById(R.id.configButton)
         selectionView = findViewById(R.id.selectionView)
         coordinatesTextView = findViewById(R.id.coordinatesTextView)
-        //val setNbCaptureButton = findViewById<Button>(R.id.setNbCaptureButton)
-        //val setCaptureDelayButton = findViewById<Button>(R.id.setCaptureDelayButton)
-
-
 
         if (selectionView is SelectionView) {
             val selectionView = selectionView as SelectionView
-        } else {
         }
 
-
-
         requestCameraPermission()
-        openCamera()
 
         captureButton.setOnClickListener {
             captureImage()
@@ -96,16 +100,13 @@ class MainActivity : AppCompatActivity() {
             showConfigDialog()
         }
 
-
-
-
-
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
     }
+
 
 
     private fun showConfigDialog() {
@@ -142,7 +143,7 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-
+/*
     private fun requestCameraPermission() {
         if (ContextCompat.checkSelfPermission(
                 this,
@@ -158,7 +159,15 @@ class MainActivity : AppCompatActivity() {
             openCamera()
         }
     }
-
+*/
+private fun requestCameraPermission() {
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), cameraPermissionRequestCode)
+    } else {
+        startCamera()
+    }
+}
+/*
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -172,10 +181,44 @@ class MainActivity : AppCompatActivity() {
         } else {
         }
     }
+*/
+override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    if (requestCode == cameraPermissionRequestCode && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        startCamera()
+    } else {
+        Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show()
+    }
+}
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
+            imageCapture = ImageCapture.Builder()
+                .setTargetRotation(previewView.display.rotation)
+                .build()
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    this, cameraSelector, preview, imageCapture
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
 
 
     private fun isCameraAvailable(): Boolean {
-        val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
         val cameraIds = cameraManager.cameraIdList
         return cameraIds.isNotEmpty()
     }
@@ -211,70 +254,92 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-private fun captureImage() {
-    val currentTime = System.currentTimeMillis()
-    val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
-    val folder = File(externalMediaDirs.first(), folderName)
-    if (!folder.exists()) {
-        folder.mkdirs()
-    }
+    private fun captureImage() {
+        val currentTime = System.currentTimeMillis()
+        val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
+        val folder = File(externalMediaDirs.first(), folderName)
+        if (!folder.exists()) {
+            folder.mkdirs()
+        }
 
-    val file = File(folder, "image_$captureCount.jpg")
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+        val file = File(folder, "image_$captureCount.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
 
-    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val savedUri = outputFileResults.savedUri ?: file.toUri()
-                val msg = "Photo capture succeeded: $savedUri"
-                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                val savedImageFile = File(savedUri.path ?: "")
-                val savedImage = BitmapFactory.decodeFile(savedImageFile.path)
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val savedUri = outputFileResults.savedUri ?: file.toUri()
+                    val msg = "Photo capture succeeded: $savedUri"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    val savedImageFile = File(savedUri.path ?: "")
+                    val savedImage = BitmapFactory.decodeFile(savedImageFile.path)
 
-                val selectionRect = selectionView.getSelectionRect() ?: Rect(0, 0, savedImage.width, savedImage.height)
-                val selectionViewWidth = selectionView.width
-                val selectionViewHeight = selectionView.height
+                    detectQrCodeAndCrop(savedImage)
 
-                val scaleX = savedImage.width.toFloat() / selectionViewWidth
-                val scaleY = savedImage.height.toFloat() / selectionViewHeight
+/*
+                    val selectionRect = selectionView.getSelectionRect() ?: Rect(0, 0, savedImage.width, savedImage.height)
+                    val selectionViewWidth = selectionView.width
+                    val selectionViewHeight = selectionView.height
 
-                val adjustedSelectionRect = Rect(
-                    (selectionRect.left * scaleX).toInt() + 100, // gross value to adjust the selection rect (might need to be dynamic)
-                    (selectionRect.top * scaleY).toInt(),
-                    (selectionRect.right * scaleX).toInt() - 100, // gross value to adjust the selection rect (might need to be dynamic)
-                    (selectionRect.bottom * scaleY).toInt()
-                )
+                    val scaleX = savedImage.width.toFloat() / selectionViewWidth
+                    val scaleY = savedImage.height.toFloat() / selectionViewHeight
 
-                val croppedBitmap = Bitmap.createBitmap(
-                    savedImage,
-                    adjustedSelectionRect.left,
-                    adjustedSelectionRect.top,
-                    adjustedSelectionRect.width(),
-                    adjustedSelectionRect.height()
-                )
+                    val adjustedSelectionRect = Rect(
+                        (selectionRect.left * scaleX).toInt() + 100, // gross value to adjust the selection rect (might need to be dynamic)
+                        (selectionRect.top * scaleY).toInt(),
+                        (selectionRect.right * scaleX).toInt() - 100, // gross value to adjust the selection rect (might need to be dynamic)
+                        (selectionRect.bottom * scaleY).toInt()
+                    )
 
-                saveCroppedBitmap(croppedBitmap, file)
+                    val croppedBitmap = Bitmap.createBitmap(
+                        savedImage,
+                        adjustedSelectionRect.left,
+                        adjustedSelectionRect.top,
+                        adjustedSelectionRect.width(),
+                        adjustedSelectionRect.height()
+                    )
 
-                displaySelectionCoordinates(adjustedSelectionRect)
+                    detectQRCodes(croppedBitmap) { barcodes ->
+                        val square = getBoundingSquareFromQRCodes(barcodes)
+                        if (square != null) {
+                            val adjustedSquare = Rect(
+                                square.left * scaleX.toInt(),
+                                square.top * scaleY.toInt(),
+                                square.right * scaleX.toInt(),
+                                square.bottom * scaleY.toInt()
+                            )
+                            val croppedBitmapToSquare = cropImageToSquare(croppedBitmap, adjustedSquare)
+                            println('a')
+                            // Utilisez croppedBitmap comme vous le souhaitez
+                        } else {
+                            // Gestion des cas où aucun QR code n'est détecté
+                        }
+                    }
 
-                saveImage(croppedBitmap, folder)
 
-                val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
-                processSubImages(imagesDirectory, folderName)
 
-                captureCount++
+                    saveCroppedBitmap(croppedBitmap, file)
 
-                if (captureCount < nbCaptureToTake) {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        captureImage()
-                    }, captureDelay)
+                    displaySelectionCoordinates(adjustedSelectionRect)
+
+                    saveImage(croppedBitmap, folder)
+
+                    val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
+                    processSubImages(imagesDirectory, folderName)
+*/
+                    captureCount++
+
+                    if (captureCount < nbCaptureToTake) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            captureImage()
+                        }, captureDelay)
+                    }
                 }
-            }
 
-            override fun onError(exception: ImageCaptureException) {
-            }
-        })
-}
+                override fun onError(exception: ImageCaptureException) {
+                }
+            })
+    }
 
     private fun saveCroppedBitmap(bitmap: Bitmap, file: File) {
         val croppedFile = File(file.parentFile, "cropped_${file.name}")
@@ -341,7 +406,7 @@ private fun captureImage() {
         }
 
         Toast.makeText(baseContext, "Cropped image saved successfully", Toast.LENGTH_SHORT).show()
-        }
+    }
 
 
 
@@ -545,9 +610,123 @@ private fun captureImage() {
         }
     }
 
+    private fun detectQRCodes(bitmap: Bitmap, callback: (List<Barcode>) -> Unit) {
+        val resizedBitmap = resizeBitmap(bitmap, 800, 800)  // Redimensionner l'image à 800x800 pixels
+        val enhancedBitmap = enhanceBitmap(resizedBitmap)  // Améliorer la luminosité et le contraste
+
+        val image = InputImage.fromBitmap(enhancedBitmap, 0)
+        val scanner = BarcodeScanning.getClient()
+
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                callback(barcodes)
+            }
+            .addOnFailureListener { e ->
+                Toast.makeText(baseContext, "QR code detection failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun resizeBitmap(bitmap: Bitmap, width: Int, height: Int): Bitmap {
+        return Bitmap.createScaledBitmap(bitmap, width, height, true)
+    }
+
+    private fun rotateBitmap(bitmap: Bitmap, degree: Float): Bitmap {
+        val matrix = Matrix()
+        matrix.postRotate(degree)
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    }
+
+    private fun enhanceBitmap(bitmap: Bitmap): Bitmap {
+        val paint = Paint()
+        val colorMatrix = ColorMatrix()
+        colorMatrix.setSaturation(1.5f)  // Augmenter la saturation
+        val filter = ColorMatrixColorFilter(colorMatrix)
+        paint.colorFilter = filter
+
+        val enhancedBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config)
+        val canvas = Canvas(enhancedBitmap)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+
+        return enhancedBitmap
+    }
 
 
 
+    fun getBoundingSquareFromQRCodes(barcodes: List<Barcode>): Rect? {
+        if (barcodes.isEmpty()) return null
+
+        var left = Int.MAX_VALUE
+        var top = Int.MAX_VALUE
+        var right = Int.MIN_VALUE
+        var bottom = Int.MIN_VALUE
+
+        for (barcode in barcodes) {
+            val boundingBox = barcode.boundingBox ?: continue
+            left = minOf(left, boundingBox.left)
+            top = minOf(top, boundingBox.top)
+            right = maxOf(right, boundingBox.right)
+            bottom = maxOf(bottom, boundingBox.bottom)
+        }
+
+        val width = right - left
+        val height = bottom - top
+        val sideLength = maxOf(width, height)
+
+        return Rect(left, top, left + sideLength, top + sideLength)
+    }
+
+
+    fun cropImageToSquare(bitmap: Bitmap, square: Rect): Bitmap {
+        return Bitmap.createBitmap(bitmap, square.left, square.top, square.width(), square.height())
+    }
+
+
+    private fun processImage(image: InputImage) {
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                for (barcode in barcodes) {
+                    val bounds = barcode.boundingBox
+                    val corners = barcode.cornerPoints
+                    val rawValue = barcode.rawValue
+
+                    // Ajoutez votre logique pour détourer le QR code ici
+                    if (bounds != null) {
+                        //drawRectangle(bounds)
+                        println("ok qr code")
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                // Handle the error
+            }
+    }
+
+
+    private fun detectQrCodeAndCrop(imageBitmap: Bitmap) {
+        val image = InputImage.fromBitmap(imageBitmap, 0)
+
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                for (barcode in barcodes) {
+                    if (barcode.format == Barcode.FORMAT_QR_CODE) {
+                        val bounds = barcode.boundingBox
+                        if (bounds != null) {
+                            val croppedBitmap = Bitmap.createBitmap(
+                                imageBitmap,
+                                bounds.left,
+                                bounds.top,
+                                bounds.width(),
+                                bounds.height()
+                            )
+                            // Sauvegarder ou traiter l'image recadrée ici
+                        }
+                    }
+                }
+            }
+            .addOnFailureListener {
+                // Gérer les erreurs de détection ici
+            }
+    }
 
 
 
