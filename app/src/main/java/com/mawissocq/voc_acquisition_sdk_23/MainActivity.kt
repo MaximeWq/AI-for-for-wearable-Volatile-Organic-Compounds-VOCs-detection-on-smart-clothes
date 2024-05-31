@@ -54,6 +54,10 @@ class MainActivity : AppCompatActivity() {
     private var numRows = 1
     private var numColumns = 1
     private var captureCount = 0
+    private var whitePixelCount = 0
+    private var nonWhitePixelCount = 0
+
+    private lateinit var hueValues: Array<FloatArray>
 
 
     private var nbCaptureToTake = 1
@@ -210,74 +214,144 @@ class MainActivity : AppCompatActivity() {
         coordinatesTextView.setText("test ${coordinates}")
     }
 
-
-private fun captureImage() {
-    val currentTime = System.currentTimeMillis()
-    val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
-    val folder = File(externalMediaDirs.first(), folderName)
-    if (!folder.exists()) {
-        folder.mkdirs()
+    private fun getHue(pixel: Int): Float {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(pixel, hsv)
+        return hsv[0]
     }
 
-    val file = File(folder, "image_$captureCount.jpg")
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+    // Function to find the bounding box of pixels with hue > 340
+    private fun findBoundingBox(bitmap: Bitmap): Rect? {
+        val width = bitmap.width
+        val height = bitmap.height
+        var minX = width
+        var minY = height
+        var maxX = 0
+        var maxY = 0
 
-    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val savedUri = outputFileResults.savedUri ?: file.toUri()
-                val msg = "Photo capture succeeded: $savedUri"
-                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                val savedImageFile = File(savedUri.path ?: "")
-                val savedImage = BitmapFactory.decodeFile(savedImageFile.path)
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                val pixel = bitmap.getPixel(x, y)
+                val hue = getHue(pixel)
+                println(hue)
 
-                val selectionRect = selectionView.getSelectionRect() ?: Rect(0, 0, savedImage.width, savedImage.height)
-                val selectionViewWidth = selectionView.width
-                val selectionViewHeight = selectionView.height
-
-                val scaleX = savedImage.width.toFloat() / selectionViewWidth
-                val scaleY = savedImage.height.toFloat() / selectionViewHeight
-
-                val adjustedSelectionRect = Rect(
-                    (selectionRect.left * scaleX).toInt() + 100, // gross value to adjust the selection rect (might need to be dynamic)
-                    (selectionRect.top * scaleY).toInt(),
-                    (selectionRect.right * scaleX).toInt() - 100, // gross value to adjust the selection rect (might need to be dynamic)
-                    (selectionRect.bottom * scaleY).toInt()
-                )
-
-                val croppedBitmap = Bitmap.createBitmap(
-                    savedImage,
-                    adjustedSelectionRect.left,
-                    adjustedSelectionRect.top,
-                    adjustedSelectionRect.width(),
-                    adjustedSelectionRect.height()
-                )
-
-                saveCroppedBitmap(croppedBitmap, file)
-
-                displaySelectionCoordinates(adjustedSelectionRect)
-
-                saveImage(croppedBitmap, folder)
-
-                val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
-                processSubImages(imagesDirectory, folderName)
-
-                captureCount++
-
-                if (captureCount < nbCaptureToTake) {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        captureImage()
-                    }, captureDelay)
+                if (hue > 340) {
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
                 }
             }
+        }
 
-            override fun onError(exception: ImageCaptureException) {
-            }
-        })
-}
+        return if (minX < maxX && minY < maxY) {
+            Rect(minX, minY, maxX, maxY)
+        } else {
+            null
+        }
+    }
+
+    // Function to crop the bitmap based on the bounding box
+    private fun cropBitmapByHue(bitmap: Bitmap): Bitmap? {
+        val boundingBox = findBoundingBox(bitmap)
+        return boundingBox?.let {
+            Bitmap.createBitmap(
+                bitmap,
+                it.left,
+                it.top,
+                it.width(),
+                it.height()
+            )
+        }
+    }
+
+
+
+    private fun captureImage() {
+        val currentTime = System.currentTimeMillis()
+        val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
+        val folder = File(externalMediaDirs.first(), folderName)
+        if (!folder.exists()) {
+            folder.mkdirs()
+        }
+
+        val file = File(folder, "image_$captureCount.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val savedUri = outputFileResults.savedUri ?: file.toUri()
+                    val msg = "Photo capture succeeded: $savedUri"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    val savedImageFile = File(savedUri.path ?: "")
+                    val savedImage = BitmapFactory.decodeFile(savedImageFile.path)
+
+                    val selectionRect = selectionView.getSelectionRect() ?: Rect(0, 0, savedImage.width, savedImage.height)
+                    val selectionViewWidth = selectionView.width
+                    val selectionViewHeight = selectionView.height
+
+                    val scaleX = savedImage.width.toFloat() / selectionViewWidth
+                    val scaleY = savedImage.height.toFloat() / selectionViewHeight
+
+                    val adjustedSelectionRect = Rect(
+                        (selectionRect.left * scaleX).toInt() /*+ 100*/, // gross value to adjust the selection rect (might need to be dynamic)
+                        (selectionRect.top * scaleY).toInt(),
+                        (selectionRect.right * scaleX).toInt()/* - 100*/, // gross value to adjust the selection rect (might need to be dynamic)
+                        (selectionRect.bottom * scaleY).toInt()
+                    )
+
+                    val croppedBitmap = Bitmap.createBitmap(
+                        savedImage,
+                        adjustedSelectionRect.left,
+                        adjustedSelectionRect.top,
+                        adjustedSelectionRect.width(),
+                        adjustedSelectionRect.height()
+                    )
+
+                    saveCroppedBitmap(croppedBitmap, file)
+
+/*
+                    val croppedBitmapHue = cropBitmapByHue(savedImage)
+                    croppedBitmapHue?.let {
+                        saveCroppedBitmap(it, file)
+                    } ?: run {
+                        Toast.makeText(baseContext, "No red pixels found", Toast.LENGTH_SHORT).show()
+                    }
+*/
+                    binarizeAndCountPixels(croppedBitmap).let { (binarizedBitmap, pixelCounts) ->
+                        saveBitmap(binarizedBitmap, file)
+                        whitePixelCount = pixelCounts.first
+                        nonWhitePixelCount = pixelCounts.second
+                    }
+
+// Afficher les résultats
+                    println("Nombre de pixels blancs: $whitePixelCount")
+                    println("Nombre de pixels non blancs: $nonWhitePixelCount")
+
+                    val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
+                    processSubImages(imagesDirectory, folderName)
+
+
+
+
+                    captureCount++
+
+                    if (captureCount < nbCaptureToTake) {
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            captureImage()
+                        }, captureDelay)
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                }
+            })
+    }
+
 
     private fun saveCroppedBitmap(bitmap: Bitmap, file: File) {
-        val croppedFile = File(file.parentFile, "cropped_${file.name}")
+        val croppedFile = File(file.parentFile, "cropped_by_color_${file.name}")
         FileOutputStream(croppedFile).use { output ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
         }
@@ -544,6 +618,62 @@ private fun captureImage() {
             saveAverageValuesToCSV(averageValues, "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}.csv")
         }
     }
+
+
+    private fun reconstructImageFromHueValues(hueValues: Array<FloatArray>, rect: Rect): Bitmap {
+        val width = rect.width()
+        val height = rect.height()
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val hue = hueValues[y][x]
+                val color = hueToColor(hue)
+                bitmap.setPixel(x, y, color)
+            }
+        }
+
+        return bitmap
+    }
+
+    private fun hueToColor(hue: Float): Int {
+        val hsv = floatArrayOf(hue, 1.0f, 1.0f) // Teinte, saturation et valeur (brightness)
+        return Color.HSVToColor(hsv)
+    }
+
+    fun binarizeAndCountPixels(bitmap: Bitmap): Pair<Bitmap, Pair<Int, Int>> {
+        val width = bitmap.width
+        val height = bitmap.height
+        val binarizedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        // Seuil pour déterminer si un pixel est blanc
+        val threshold = 250
+
+        // Compteurs de pixels blancs et non blancs
+        var whitePixelCount = 0
+        var nonWhitePixelCount = 0
+
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = Color.red(pixel)
+                val green = Color.green(pixel)
+                val blue = Color.blue(pixel)
+                println("Red: $red, Green: $green, Blue: $blue")
+
+                // Vérifier si le pixel est suffisamment proche du blanc
+                if (red > threshold && green > threshold && blue > threshold) {
+                    binarizedBitmap.setPixel(x, y, Color.WHITE)
+                    whitePixelCount++
+                } else {
+                    binarizedBitmap.setPixel(x, y, Color.BLACK)
+                    nonWhitePixelCount++
+                }
+            }
+        }
+        return Pair(binarizedBitmap, Pair(whitePixelCount, nonWhitePixelCount))
+    }
+
 
 
 
