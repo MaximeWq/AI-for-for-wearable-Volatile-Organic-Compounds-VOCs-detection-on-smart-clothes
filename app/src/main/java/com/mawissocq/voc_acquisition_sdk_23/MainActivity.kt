@@ -43,6 +43,11 @@ import kotlin.math.min
 import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
 
 class MainActivity : AppCompatActivity() {
     private val cameraPermissionRequestCode = 100
@@ -72,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         captureButton = findViewById(R.id.captureButton)
         configButton = findViewById(R.id.configButton)
         selectionView = findViewById(R.id.selectionView)
-        coordinatesTextView = findViewById(R.id.coordinatesTextView)
+        //coordinatesTextView = findViewById(R.id.coordinatesTextView)
         //val setNbCaptureButton = findViewById<Button>(R.id.setNbCaptureButton)
         //val setCaptureDelayButton = findViewById<Button>(R.id.setCaptureDelayButton)
 
@@ -211,70 +216,90 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-private fun captureImage() {
-    val currentTime = System.currentTimeMillis()
-    val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
-    val folder = File(externalMediaDirs.first(), folderName)
-    if (!folder.exists()) {
-        folder.mkdirs()
+    private fun captureImage() {
+        val currentTime = System.currentTimeMillis()
+        val folderName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(currentTime)
+        val folder = File(externalMediaDirs.first(), folderName)
+        if (!folder.exists()) {
+            folder.mkdirs()
+        }
+
+        val file = File(folder, "image_$captureCount.jpg")
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+
+        imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val savedUri = outputFileResults.savedUri ?: file.toUri()
+                    val msg = "Photo capture succeeded: $savedUri"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    val savedImageFile = File(savedUri.path ?: "")
+                    val savedImage = BitmapFactory.decodeFile(savedImageFile.path)
+
+                    CoroutineScope(Dispatchers.Main).launch {
+                        val nonWhiteRect = withContext(Dispatchers.Default) {
+                            detectNonWhitePixels(savedImage)
+                        }
+
+                        val croppedBitmap = Bitmap.createBitmap(
+                            savedImage,
+                            nonWhiteRect.left,
+                            nonWhiteRect.top,
+                            nonWhiteRect.width(),
+                            nonWhiteRect.height()
+                        )
+
+                        saveCroppedBitmap(croppedBitmap, file)
+                        saveImage(croppedBitmap, folder)
+
+                        val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
+                        processSubImages(imagesDirectory, folderName)
+
+                        captureCount++
+
+                        if (captureCount < nbCaptureToTake) {
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                captureImage()
+                            }, captureDelay)
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    // Handle error
+                }
+            })
     }
 
-    val file = File(folder, "image_$captureCount.jpg")
-    val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
+    private suspend fun detectNonWhitePixels(bitmap: Bitmap, tolerance: Int = 190): Rect {
+        var left = bitmap.width
+        var top = bitmap.height
+        var right = 0
+        var bottom = 0
 
-    imageCapture.takePicture(outputOptions, ContextCompat.getMainExecutor(this),
-        object : ImageCapture.OnImageSavedCallback {
-            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                val savedUri = outputFileResults.savedUri ?: file.toUri()
-                val msg = "Photo capture succeeded: $savedUri"
-                Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                val savedImageFile = File(savedUri.path ?: "")
-                val savedImage = BitmapFactory.decodeFile(savedImageFile.path)
+        for (x in 0 until bitmap.width) {
+            for (y in 0 until bitmap.height) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = Color.red(pixel)
+                val green = Color.green(pixel)
+                val blue = Color.blue(pixel)
 
-                val selectionRect = selectionView.getSelectionRect() ?: Rect(0, 0, savedImage.width, savedImage.height)
-                val selectionViewWidth = selectionView.width
-                val selectionViewHeight = selectionView.height
-
-                val scaleX = savedImage.width.toFloat() / selectionViewWidth
-                val scaleY = savedImage.height.toFloat() / selectionViewHeight
-
-                val adjustedSelectionRect = Rect(
-                    (selectionRect.left * scaleX).toInt() + 100, // gross value to adjust the selection rect (might need to be dynamic)
-                    (selectionRect.top * scaleY).toInt(),
-                    (selectionRect.right * scaleX).toInt() - 100, // gross value to adjust the selection rect (might need to be dynamic)
-                    (selectionRect.bottom * scaleY).toInt()
-                )
-
-                val croppedBitmap = Bitmap.createBitmap(
-                    savedImage,
-                    adjustedSelectionRect.left,
-                    adjustedSelectionRect.top,
-                    adjustedSelectionRect.width(),
-                    adjustedSelectionRect.height()
-                )
-
-                saveCroppedBitmap(croppedBitmap, file)
-
-                displaySelectionCoordinates(adjustedSelectionRect)
-
-                saveImage(croppedBitmap, folder)
-
-                val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
-                processSubImages(imagesDirectory, folderName)
-
-                captureCount++
-
-                if (captureCount < nbCaptureToTake) {
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        captureImage()
-                    }, captureDelay)
+                if (!isApproxWhite(red, green, blue, tolerance)) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
                 }
             }
+        }
 
-            override fun onError(exception: ImageCaptureException) {
-            }
-        })
-}
+        return Rect(left, top, right, bottom)
+    }
+
+    private fun isApproxWhite(red: Int, green: Int, blue: Int, tolerance: Int): Boolean {
+        return (255 - red <= tolerance) && (255 - green <= tolerance) && (255 - blue <= tolerance)
+    }
+
 
     private fun saveCroppedBitmap(bitmap: Bitmap, file: File) {
         val croppedFile = File(file.parentFile, "cropped_${file.name}")
@@ -341,7 +366,7 @@ private fun captureImage() {
         }
 
         Toast.makeText(baseContext, "Cropped image saved successfully", Toast.LENGTH_SHORT).show()
-        }
+    }
 
 
 
@@ -534,7 +559,6 @@ private fun captureImage() {
         val subImages = imagesDir.listFiles { file -> file.isFile && file.extension == "jpg" && file.name.startsWith("grid_image") }
         if (subImages != null && subImages.isNotEmpty()) {
             val averageValues = mutableListOf<Double>()
-            //averageValues.add(SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(System.currentTimeMillis()).toDouble())
             for (subImage in subImages.sortedBy { it.nameWithoutExtension }) {
                 val bitmap = BitmapFactory.decodeFile(subImage.absolutePath)
                 val averagePixelValue = calculateAveragePixelValue(bitmap)

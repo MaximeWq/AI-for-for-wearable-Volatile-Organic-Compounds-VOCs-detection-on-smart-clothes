@@ -28,13 +28,6 @@ class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val x = event.x.toString()
         val y = event.y.toString()
-        //val coordinatesTextView = findViewById<TextView>(R.id.coordinatesTextView)
-        //coordinatesTextView.setText("Coordonnéesfeur1 : ${x} feur ${y}")
-        //findViewById<TextView>(R.id.coordinatesTextView)?.text = "Coordonnéesfeur2 : ${x} feur ${y}"
-        Log.d("Coordonnées", "Coordonnées : (${x}, ${y})")
-
-        //val coordinatesTextView = findViewById<TextView>(R.id.coordinatesTextView)
-        //coordinatesTextView.setText("Coordonnéesfeur1 :")
 
 
         when (event.action) {
@@ -56,7 +49,6 @@ class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs
                 val right = Math.max(startX, endX).toInt()
                 val bottom = Math.max(startY, endY).toInt()
                 triangleArea = Rect(left, top, right, bottom)
-                println("Coordinates of selection rectangle: ($left, $top) - ($right, $bottom)")
                 invalidate()
             }
         }
@@ -79,8 +71,6 @@ class SelectionView(context: Context, attrs: AttributeSet) : View(context, attrs
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         triangleArea?.let {
-            val coordinates = "Coordonnéesfeur3 : (${it.left}, ${it.top}) - (${it.right}, ${it.bottom})"
-            findViewById<TextView>(R.id.coordinatesTextView)?.text = coordinates
         }
         drawSelectionRect(canvas)
     }
