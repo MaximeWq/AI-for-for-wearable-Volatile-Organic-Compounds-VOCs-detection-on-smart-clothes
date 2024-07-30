@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -117,6 +118,8 @@ class MainActivity : AppCompatActivity() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_config, null)
         val numRowsInput = dialogView.findViewById<EditText>(R.id.numRowsInput)
         val numColumnsInput = dialogView.findViewById<EditText>(R.id.numColumnsInput)
+        val nbCaptureToTakeInput = dialogView.findViewById<EditText>(R.id.nbCaptureToTakeInput)
+        val captureDelayInput = dialogView.findViewById<EditText>(R.id.captureDelayInput)
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Configure Grid")
@@ -124,9 +127,9 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("OK") { _, _ ->
                 val rowsStr = numRowsInput.text.toString()
                 val columnsStr = numColumnsInput.text.toString()
-                val nbCaptureStr = numRowsInput.text.toString()
-                val captureDelayStr = numColumnsInput.text.toString()
-                if (rowsStr.isNotEmpty() && columnsStr.isNotEmpty()) {
+                val nbCaptureStr = nbCaptureToTakeInput.text.toString()
+                val captureDelayStr = captureDelayInput.text.toString()
+                if (rowsStr.isNotEmpty() && columnsStr.isNotEmpty() && nbCaptureStr.isNotEmpty() && captureDelayStr.isNotEmpty()) {
                     numRows = rowsStr.toInt()
                     numColumns = columnsStr.toInt()
                     nbCaptureToTake = nbCaptureStr.toInt()
@@ -253,25 +256,42 @@ class MainActivity : AppCompatActivity() {
                         saveImage(croppedBitmap, folder)
 
                         val imagesDirectory = "file:///storage/emulated/0/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
+                        //val imagesDirectory = "file:///Phone storage/Android/media/com.mawissocq.voc_acquisition_sdk_23/"
+                        val externalStorageDirectory = Environment.getExternalStorageDirectory()
+
+                        val imagesDir = File(
+                            externalStorageDirectory,
+                            "Android/media/com.mawissocq.voc_acquisition_sdk_23/"
+                        )
                         processSubImages(imagesDirectory, folderName)
 
-                        captureCount++
 
-                        if (captureCount < nbCaptureToTake) {
+                        if (captureCount < nbCaptureToTake - 1) {
+                            println(" capturecount $captureCount")
+                            println("nbCaptureToTake $nbCaptureToTake")
+                            Toast.makeText(baseContext, "Capture $captureCount nbCaptureToTake $nbCaptureToTake", Toast.LENGTH_SHORT).show()
                             Handler(Looper.getMainLooper()).postDelayed({
                                 captureImage()
                             }, captureDelay)
+                        } else {
+                            appendCommaToEndOfCSV("${imagesDir.absolutePath}/rows_${numRows}_columns_${numColumns}_gray.csv")
+                            appendCommaToEndOfCSV("${imagesDir.absolutePath}/rows_${numRows}_columns_${numColumns}_red.csv")
+                            appendCommaToEndOfCSV("${imagesDir.absolutePath}/rows_${numRows}_columns_${numColumns}_green.csv")
+                            appendCommaToEndOfCSV("${imagesDir.absolutePath}/rows_${numRows}_columns_${numColumns}_blue.csv")
                         }
+
+                        captureCount++
                     }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
-                    // Handle error
                 }
             })
     }
 
-    private suspend fun detectNonWhitePixels(bitmap: Bitmap, tolerance: Int = 190): Rect {
+
+
+    private fun detectNonWhitePixels(bitmap: Bitmap, tolerance: Int = 150): Rect {
         var left = bitmap.width
         var top = bitmap.height
         var right = 0
@@ -292,6 +312,19 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        //left = (left - 50).coerceAtMost(bitmap.width)
+        //top = (top).coerceAtMost(bitmap.height)
+        //right = (right + 60).coerceAtLeast(0)
+        //bottom = (bottom + 80).coerceAtLeast(0)
+
+        if (left >= right || top >= bottom) {
+            left = 0
+            top = 0
+            right = bitmap.width
+            bottom = bitmap.height
+        }
+
 
         return Rect(left, top, right, bottom)
     }
@@ -531,6 +564,78 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun calculateAverageRedValue(bitmap: Bitmap): Double {
+        val width20Percent = (bitmap.width * 0.2).toInt()
+        val height20Percent = (bitmap.height * 0.2).toInt()
+
+        var totalRedValue = 0
+        var totalPixels = 0
+
+        for (x in 0 until width20Percent) {
+            for (y in 0 until height20Percent) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = Color.red(pixel)
+                totalRedValue += red
+                totalPixels++
+            }
+        }
+
+        return if (totalPixels > 0) {
+            totalRedValue.toDouble() / totalPixels
+        } else {
+            0.0
+        }
+    }
+
+    private fun calculateAverageGreenValue(bitmap: Bitmap): Double {
+        val width20Percent = (bitmap.width * 0.2).toInt()
+        val height20Percent = (bitmap.height * 0.2).toInt()
+
+        var totalGreenValue = 0
+        var totalPixels = 0
+
+        for (x in 0 until width20Percent) {
+            for (y in 0 until height20Percent) {
+                val pixel = bitmap.getPixel(x, y)
+                val green = Color.green(pixel)
+                totalGreenValue += green
+                totalPixels++
+            }
+        }
+
+        return if (totalPixels > 0) {
+            totalGreenValue.toDouble() / totalPixels
+        } else {
+            0.0
+        }
+    }
+
+    private fun calculateAverageBlueValue(bitmap: Bitmap): Double {
+        val width20Percent = (bitmap.width * 0.2).toInt()
+        val height20Percent = (bitmap.height * 0.2).toInt()
+
+        var totalBlueValue = 0
+        var totalPixels = 0
+
+        for (x in 0 until width20Percent) {
+            for (y in 0 until height20Percent) {
+                val pixel = bitmap.getPixel(x, y)
+                val blue = Color.blue(pixel)
+                totalBlueValue += blue
+                totalPixels++
+            }
+        }
+
+        return if (totalPixels > 0) {
+            totalBlueValue.toDouble() / totalPixels
+        } else {
+            0.0
+        }
+    }
+
+
+
+
 
 
 
@@ -542,32 +647,98 @@ class MainActivity : AppCompatActivity() {
             writer.append(SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(System.currentTimeMillis()))
             writer.append(";")
             for ((index, value) in averageValues.withIndex()) {
-                writer.append("$value;")
+                writer.append("$value")
+                if (index < averageValues.size - 1) {
+                    writer.append(";")
+                }
             }
             writer.append("\n")
             writer.close()
-
         } catch (e: IOException) {
             e.printStackTrace()
         }
     }
 
 
-    private fun processSubImages(imagesDirectory: String, folderName: String){
+    private fun processSubImages(imagesDirectory: String, folderName: String) {
         val externalStorageDirectory = Environment.getExternalStorageDirectory()
-        val imagesDir = File(externalStorageDirectory, "Android/media/com.mawissocq.voc_acquisition_sdk_23/$folderName")
-        val subImages = imagesDir.listFiles { file -> file.isFile && file.extension == "jpg" && file.name.startsWith("grid_image") }
+        val imagesDir = File(
+            externalStorageDirectory,
+            "Android/media/com.mawissocq.voc_acquisition_sdk_23/$folderName"
+        )
+        val subImages = imagesDir.listFiles { file ->
+            file.isFile && file.extension == "jpg" && file.name.startsWith("grid_image")
+        }
         if (subImages != null && subImages.isNotEmpty()) {
-            val averageValues = mutableListOf<Double>()
+            val averageValuesGray = mutableListOf<Double>()
+            val averageValuesRed = mutableListOf<Double>()
+            val averageValuesGreen = mutableListOf<Double>()
+            val averageValuesBlue = mutableListOf<Double>()
             for (subImage in subImages.sortedBy { it.nameWithoutExtension }) {
                 val bitmap = BitmapFactory.decodeFile(subImage.absolutePath)
                 val averagePixelValue = calculateAveragePixelValue(bitmap)
-                averageValues.add(averagePixelValue)
+                val averageBlue = calculateAverageBlueValue(bitmap)
+                val averageGreen = calculateAverageGreenValue(bitmap)
+                val averageRed = calculateAverageRedValue(bitmap)
+
+                averageValuesGray.add(averagePixelValue)
+                averageValuesRed.add(averageRed)
+                averageValuesGreen.add(averageGreen)
+                averageValuesBlue.add(averageBlue)
             }
 
-            saveAverageValuesToCSV(averageValues, "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}.csv")
+            saveAverageValuesToCSV(
+                averageValuesGray,
+                "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_gray.csv"
+            )
+            saveAverageValuesToCSV(
+                averageValuesRed,
+                "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_red.csv"
+            )
+            saveAverageValuesToCSV(
+                averageValuesGreen,
+                "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_green.csv"
+            )
+            saveAverageValuesToCSV(
+                averageValuesBlue,
+                "${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_blue.csv"
+            )
+
+            try {
+                //appendCommaToEndOfCSV("${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_gray.csv")
+                //appendCommaToEndOfCSV("${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_red.csv")
+                //appendCommaToEndOfCSV("${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_green.csv")
+                //appendCommaToEndOfCSV("${imagesDir.absolutePath}/../rows_${numRows}_columns_${numColumns}_blue.csv")
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
         }
     }
+
+    private fun appendCommaToEndOfCSV(filePath: String) {
+        try {
+            val file = File(filePath)
+            if (file.exists()) {
+                Log.d("appendCommaToEndOfCSV", "File exists: $filePath")
+            } else {
+                Log.e("appendCommaToEndOfCSV", "File does not exist: $filePath")
+                return
+            }
+
+            val writer = FileWriter(file, true)
+            writer.append("-")
+            writer.flush()
+            writer.close()
+
+            Log.d("appendCommaToEndOfCSV", "Comma appended successfully")
+        } catch (e: IOException) {
+            e.printStackTrace()
+            Log.e("appendCommaToEndOfCSV", "Error appending comma: ${e.message}")
+        }
+    }
+
+
+
 
 
 
