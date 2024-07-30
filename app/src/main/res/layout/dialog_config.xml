@@ -26,6 +26,6 @@
         android:id="@+id/captureDelayInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Capture Delay (in milliseconds)" />
+        android:hint="Added capture delay in milliseconds (this amount will be added to the already existing minimum capture delay of 40 seconds)" />
 
 </LinearLayout>
