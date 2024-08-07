@@ -173,11 +173,15 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        // Check if the request code matches the camera permission request code
         if (requestCode == cameraPermissionRequestCode && grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         ) {
+            // If the permission is granted, open the camera
             openCamera()
         } else {
+            // Permission denied - can handle this case here if needed
+
         }
     }
 
@@ -188,17 +192,29 @@ class MainActivity : AppCompatActivity() {
         return cameraIds.isNotEmpty()
     }
 
+    /**
+     * Initializes the camera and sets up the preview and image capture use cases.
+     * This function first retrieves the camera provider, then configures the camera
+     * to use the back camera for preview and image capture. It also sets up the
+     * surface provider for the preview display.
+     */
+
     private fun openCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
+            // Get the camera provider once it's available
             val cameraProvider = cameraProviderFuture.get()
+            // Select the default back camera
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            // Build the preview use case
             val preview = Preview.Builder().build()
+            // Build the image capture use case and set the target rotation
             val imageCapture = ImageCapture.Builder().setTargetRotation(previewView.display.rotation)
                 .build()
 
             try {
                 cameraProvider.unbindAll()
+                // Bind the lifecycle of the camera to the lifecycle owner (this activity)
                 val camera = cameraProvider.bindToLifecycle(
                     this,
                     cameraSelector,
@@ -218,6 +234,15 @@ class MainActivity : AppCompatActivity() {
         coordinatesTextView.setText("test ${coordinates}")
     }
 
+    /**
+     * Captures an image using the camera, saves it to the external media directory,
+     * and processes the captured image. The image is saved with a timestamp-based
+     * folder name and a sequentially numbered file name. After saving, the image
+     * is cropped to remove white pixels and the cropped image is saved again.
+     * If the required number of captures is not yet reached, it schedules the next
+     * capture after a specified delay. Finally, it processes sub-images and appends
+     * commas to specific CSV files.
+     */
 
     private fun captureImage() {
         val currentTime = System.currentTimeMillis()
@@ -290,7 +315,9 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-
+    /**
+     * Detects the non-white pixels in the image and returns the bounding rectangle
+     */
     private fun detectNonWhitePixels(bitmap: Bitmap, tolerance: Int = 150): Rect {
         var left = bitmap.width
         var top = bitmap.height
@@ -329,11 +356,16 @@ class MainActivity : AppCompatActivity() {
         return Rect(left, top, right, bottom)
     }
 
+    /**
+     * Checks if the given RGB values are approximately white
+     */
     private fun isApproxWhite(red: Int, green: Int, blue: Int, tolerance: Int): Boolean {
         return (255 - red <= tolerance) && (255 - green <= tolerance) && (255 - blue <= tolerance)
     }
 
-
+    /**
+     * Saves the cropped bitmap to a file
+     */
     private fun saveCroppedBitmap(bitmap: Bitmap, file: File) {
         val croppedFile = File(file.parentFile, "cropped_${file.name}")
         FileOutputStream(croppedFile).use { output ->
@@ -344,7 +376,10 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
+    /**
+     * Not used anymore.
+     * Draw a selection rectangle on the bitmap and save it to a file
+     */
 
     fun drawSelectionRectOnBitmap(bitmap: Bitmap, selectionRect: Rect): Bitmap {
         val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -365,6 +400,10 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(baseContext, "Image with selection rect saved successfully", Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * Not used anymore.
+     * Was used to return a bitmap with a selection rectangle drawn on it based on given coordinates
+     */
 
     private fun drawSelectionRectangle(bitmap: Bitmap, selectionRect: Rect): Bitmap {
         val resultBitmap = bitmap.copy(bitmap.config, true)
@@ -378,32 +417,13 @@ class MainActivity : AppCompatActivity() {
         return resultBitmap
     }
 
-    private fun saveBitmap(bitmap: Bitmap, file: File) {
-        try {
-            FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
-            }
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-    }
 
+/**
+ * Splits the given bitmap into a grid based on the specified number of rows and columns,
+ * and saves each grid segment as a separate image file in the specified folder.
+ */
 
-
-
-    private fun saveCroppedImage(bitmap: Bitmap, folder: File, selectionRect: Rect) {
-        val croppedFile = File(folder, "cropped_image_x_${selectionRect.left}_y_${selectionRect.top}.jpg")
-
-        FileOutputStream(croppedFile).use { output ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
-        }
-
-        Toast.makeText(baseContext, "Cropped image saved successfully", Toast.LENGTH_SHORT).show()
-    }
-
-
-
-    private fun saveImage(bitmap: Bitmap?, folder: File) {
+private fun saveImage(bitmap: Bitmap?, folder: File) {
         bitmap?.let { image ->
             val gridWidth = image.width / numColumns
             val gridHeight = image.height / numRows
@@ -425,76 +445,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun cropImageBySelection(bitmap: Bitmap, selectionRect: Rect): Bitmap? {
-        if (selectionRect.isEmpty || selectionRect.left < 0 || selectionRect.top < 0 ||
-            selectionRect.right > bitmap.width || selectionRect.bottom > bitmap.height
-        ) {
-            return null
-        }
-
-
-        return Bitmap.createBitmap(
-            //bitmap, selectionRect.left, selectionRect.top, selectionRect.width(), selectionRect.height()
-            bitmap,
-            selectionRect.left * 4,
-            selectionRect.top * 4,
-            selectionRect.width(),
-            selectionRect.height()
-
-        )
-    }
-
-    fun cropBitmapWithCanvas(sourceBitmap: Bitmap, selectionRect: Rect): Bitmap {
-        val croppedBitmap = Bitmap.createBitmap(selectionRect.width(), selectionRect.height(), sourceBitmap.config)
-
-        val canvas = Canvas(croppedBitmap)
-
-        val srcRect = Rect(selectionRect.left, selectionRect.top, selectionRect.right, selectionRect.bottom)
-        val destRect = Rect(0, 0, selectionRect.width(), selectionRect.height())
-
-        canvas.drawBitmap(sourceBitmap, srcRect, destRect, Paint())
-
-        return croppedBitmap
-    }
 
 
 
 
-
-    private fun saveSelectedRect(bitmap: Bitmap?, folder: File) {
-        bitmap?.let { fullImage ->
-            selectionView.getSelectionRect()?.let { rect ->
-                val selectedBitmap = Bitmap.createBitmap(
-                    fullImage, rect.left, rect.top, rect.width(), rect.height()
-                )
-
-                saveGridImage(selectedBitmap, 0, 0, 0, folder)
-
-                splitAndSaveGridImage(selectedBitmap, folder)
-            }
-        }
-    }
-
-    private fun splitAndSaveGridImage(bitmap: Bitmap, folder: File) {
-        val gridWidth = bitmap.width / numColumns
-        val gridHeight = bitmap.height / numRows
-
-        var imageIndex = 0
-        for (row in 0 until numRows) {
-            for (col in 0 until numColumns) {
-                val startX = col * gridWidth
-                val startY = row * gridHeight
-
-                if (startX + gridWidth <= bitmap.width && startY + gridHeight <= bitmap.height) {
-                    val gridBitmap =
-                        Bitmap.createBitmap(bitmap, startX, startY, gridWidth, gridHeight)
-
-                    saveGridImage(gridBitmap, row, col, imageIndex++, folder)
-                }
-            }
-        }
-    }
-
+/**
+ * Saves a given bitmap as a JPEG image file in the specified folder.
+ * The filename includes the image index, row, and column to uniquely identify each grid segment.
+ */
     private fun saveGridImage(bitmap: Bitmap, row: Int, col: Int, imageIndex: Int, folder: File) {
         var output: FileOutputStream? = null
         try {
@@ -515,39 +473,26 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private fun cropAndSaveImage(image: Bitmap?) {
-        image?.let { bitmap ->
-            val cropTop = 195
-            val cropBottom = 208
-
-            val croppedBitmap = Bitmap.createBitmap(
-                bitmap,
-                0,
-                cropTop,
-                bitmap.width,
-                bitmap.height - cropTop - cropBottom
-            )
-
-            val croppedFile = File(externalMediaDirs.first(), "cropped_image.jpg")
-            FileOutputStream(croppedFile).use { output ->
-                croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, output)
-            }
-
-            Toast.makeText(baseContext, "Image cropped and saved successfully", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-
-
+    /**
+     * Calculates the average pixel value (RGB) of the central 20% region of the given bitmap.
+     * The average pixel value is computed as the mean of the RGB components for each pixel in this region.
+     *
+     * @param bitmap The bitmap image to calculate the average pixel value from.
+     * @return The average pixel value of the specified region, or 0.0 if no pixels are processed.
+     */
     private fun calculateAveragePixelValue(bitmap: Bitmap): Double {
         val width20Percent = (bitmap.width * 0.2).toInt()
         val height20Percent = (bitmap.height * 0.2).toInt()
 
+        // Calculate the starting points for the central 20% region
+        val startX = (bitmap.width - width20Percent) / 2
+        val startY = (bitmap.height - height20Percent) / 2
+
         var totalPixelValue = 0
         var totalPixels = 0
 
-        for (x in 0 until width20Percent) {
-            for (y in 0 until height20Percent) {
+        for (x in startX until startX + width20Percent) {
+            for (y in startY until startY + height20Percent) {
                 val pixel = bitmap.getPixel(x, y)
                 val red = Color.red(pixel)
                 val green = Color.green(pixel)
@@ -564,15 +509,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Calculates the average red value of the central 20% region of the given bitmap.
+     * The average red value is computed as the mean of the red component of each pixel in this region.
+     *
+     * @param bitmap The bitmap image to calculate the average red value from.
+     * @return The average red value of the specified region, or 0.0 if no pixels are processed.
+     */
     private fun calculateAverageRedValue(bitmap: Bitmap): Double {
         val width20Percent = (bitmap.width * 0.2).toInt()
         val height20Percent = (bitmap.height * 0.2).toInt()
 
+        // Calculate the starting points for the central 20% region
+        val startX = (bitmap.width - width20Percent) / 2
+        val startY = (bitmap.height - height20Percent) / 2
+
         var totalRedValue = 0
         var totalPixels = 0
 
-        for (x in 0 until width20Percent) {
-            for (y in 0 until height20Percent) {
+        for (x in startX until startX + width20Percent) {
+            for (y in startY until startY + height20Percent) {
                 val pixel = bitmap.getPixel(x, y)
                 val red = Color.red(pixel)
                 totalRedValue += red
@@ -587,15 +543,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Calculates the average green value of the central 20% region of the given bitmap.
+     * The average green value is computed as the mean of the green component of each pixel in this region.
+     *
+     * @param bitmap The bitmap image to calculate the average green value from.
+     * @return The average green value of the specified region, or 0.0 if no pixels are processed.
+     */
     private fun calculateAverageGreenValue(bitmap: Bitmap): Double {
         val width20Percent = (bitmap.width * 0.2).toInt()
         val height20Percent = (bitmap.height * 0.2).toInt()
 
+        // Calculate the starting points for the central 20% region
+        val startX = (bitmap.width - width20Percent) / 2
+        val startY = (bitmap.height - height20Percent) / 2
+
         var totalGreenValue = 0
         var totalPixels = 0
 
-        for (x in 0 until width20Percent) {
-            for (y in 0 until height20Percent) {
+        for (x in startX until startX + width20Percent) {
+            for (y in startY until startY + height20Percent) {
                 val pixel = bitmap.getPixel(x, y)
                 val green = Color.green(pixel)
                 totalGreenValue += green
@@ -610,15 +577,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Calculates the average blue value of the central 20% region of the given bitmap.
+     * The average blue value is computed as the mean of the blue component of each pixel in this region.
+     *
+     * @param bitmap The bitmap image to calculate the average blue value from.
+     * @return The average blue value of the specified region, or 0.0 if no pixels are processed.
+     */
     private fun calculateAverageBlueValue(bitmap: Bitmap): Double {
         val width20Percent = (bitmap.width * 0.2).toInt()
         val height20Percent = (bitmap.height * 0.2).toInt()
 
+        // Calculate the starting points for the central 20% region
+        val startX = (bitmap.width - width20Percent) / 2
+        val startY = (bitmap.height - height20Percent) / 2
+
         var totalBlueValue = 0
         var totalPixels = 0
 
-        for (x in 0 until width20Percent) {
-            for (y in 0 until height20Percent) {
+        for (x in startX until startX + width20Percent) {
+            for (y in startY until startY + height20Percent) {
                 val pixel = bitmap.getPixel(x, y)
                 val blue = Color.blue(pixel)
                 totalBlueValue += blue
@@ -636,8 +614,12 @@ class MainActivity : AppCompatActivity() {
 
 
 
-
-
+    /**
+     * Appends a line of average values to a CSV file.
+     *
+     * @param averageValues List of average values to be saved in the CSV file.
+     * @param filePath Path to the CSV file where the data will be appended.
+     */
 
     private fun saveAverageValuesToCSV(averageValues: List<Double>, filePath: String) {
         try {
@@ -659,6 +641,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Processes sub-images within a specified directory to calculate average pixel values and save them to CSV files.
+     *
+     * @param imagesDirectory Path to the main directory containing sub-image folders.
+     * @param folderName Name of the folder within the main directory where sub-images are located.
+     */
 
     private fun processSubImages(imagesDirectory: String, folderName: String) {
         val externalStorageDirectory = Environment.getExternalStorageDirectory()
@@ -714,6 +702,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+    /**
+     * Appends a hyphen to the end of a specified CSV file.
+     *
+     * This function checks if the given file exists. If it does, it opens the file in append mode,
+     * appends a hyphen character to the end, and then closes the file. It logs success or error messages
+     * based on the result of the operation.
+     *
+     * @param filePath The path to the CSV file where the hyphen should be appended.
+     */
 
     private fun appendCommaToEndOfCSV(filePath: String) {
         try {
@@ -736,14 +733,6 @@ class MainActivity : AppCompatActivity() {
             Log.e("appendCommaToEndOfCSV", "Error appending comma: ${e.message}")
         }
     }
-
-
-
-
-
-
-
-
 
 
 
